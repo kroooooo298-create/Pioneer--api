@@ -1,9 +1,9 @@
 // One sweep at a time. Unknown HTTP/notification outcomes are never retried here.
-export async function sweep({url,token,fetcher=fetch,dry=false}){
+export async function sweep({url,token,siteAccess,fetcher=fetch,dry=false}){
  const endpoint=new URL('/internal-monitor',url);
  if(endpoint.protocol!=='https:'||endpoint.username||endpoint.password||!token||token.length<32)throw Error('Invalid monitor configuration');
  const call=async args=>{
-  let r;try{r=await fetcher(endpoint,{method:args?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:args?JSON.stringify(args):undefined,redirect:'error',signal:AbortSignal.timeout(120000)});}catch{throw Error('Monitor request interrupted; no retry');}
+  let r;try{r=await fetcher(endpoint,{method:args?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json','User-Agent':'TrendRadar-Monitor/1.0',...(siteAccess?{'OAI-Sites-Authorization':'Bearer '+siteAccess}:{})},body:args?JSON.stringify(args):undefined,redirect:'error',signal:AbortSignal.timeout(120000)});}catch{throw Error('Monitor request interrupted; no retry');}
   if(!r.ok)throw Error('Monitor HTTP '+r.status+'; no retry');
   return r.json();
  };
@@ -27,7 +27,7 @@ export function startScheduler(env=process.env,log=console.log){
  if(env.MONITOR_ENABLED!=='true')return ()=>{};
  let stopped=false,timer;
  const tick=async()=>{
-  try{log('monitor '+JSON.stringify(await sweep({url:env.MONITOR_SITE_URL,token:env.MONITOR_TOKEN})));}
+  try{log('monitor '+JSON.stringify(await sweep({url:env.MONITOR_SITE_URL,token:env.MONITOR_TOKEN,siteAccess:env.MONITOR_SITE_ACCESS})));}
   catch{log('monitor interrupted; check website status; no batch retry');}
   if(!stopped)timer=setTimeout(tick,60000);
  };
