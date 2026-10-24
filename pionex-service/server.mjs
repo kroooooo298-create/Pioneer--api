@@ -2,12 +2,13 @@ import {createServer} from 'node:http';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {createPionexLoader,contract,STEPS} from './market.mjs';
+import {fundingBundle} from './funding.mjs';
 import {startScheduler} from './scheduler.mjs';
 
 export function marketClient(fetcher=fetch,clock=Date.now,pause=ms=>new Promise(r=>setTimeout(r,ms))){
  const cache=new Map();let chain=Promise.resolve(),next=0,queued=0,blockedUntil=0;
  return async(path,ttl)=>{
-  if(!/^\/api\/v1\/(common\/symbols\?type=PERP|market\/(bookTickers\?type=PERP|tickers\?type=PERP|klines\?symbol=[A-Z0-9]+_USDT_PERP&interval=(60M|4H)&limit=500))$/.test(path))throw Error('不允許的行情路徑');
+  if(!/^\/api\/v1\/(common\/symbols\?type=PERP|market\/(indexes|fundingRates\?symbol=[A-Z0-9]+_USDT_PERP&limit=1|bookTickers\?type=PERP|tickers\?type=PERP|klines\?symbol=[A-Z0-9]+_USDT_PERP&interval=(60M|4H)&limit=500))$/.test(path))throw Error('不允許的行情路徑');
   const hit=cache.get(path);if(hit&&(hit.pending||clock()<hit.expires))return hit.promise;
   if(clock()<blockedUntil)throw Error('Pionex 限流或拒絕，暫停重試');
   if(queued>=32)throw Error('行情請求忙碌，請稍後重試');
@@ -28,7 +29,7 @@ export function marketClient(fetcher=fetch,clock=Date.now,pause=ms=>new Promise(
  };
 }
 const hash=s=>createHash('sha256').update(s).digest();
-export function relayHandler({token,load}){
+export function relayHandler({token,load,loadFunding}){
  if(typeof token!=='string'||token.length<32)throw Error('RELAY_TOKEN must contain at least 32 characters');
  return async(req,res)=>{
   const send=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));};
@@ -36,6 +37,11 @@ export function relayHandler({token,load}){
   const url=new URL(req.url,'http://localhost');
   if(url.pathname==='/healthz')return send(200,{ok:true,service:'pionex-perp-relay',marketVerified:false});
   const auth=String(req.headers.authorization||'');if(!timingSafeEqual(hash(auth),hash('Bearer '+token)))return send(401,{error:'Unauthorized'});
+  if(url.pathname==='/v1/funding'){
+   const symbol=url.searchParams.get('symbol');
+   try{contract(symbol);if([...url.searchParams.keys()].some(k=>k!=='symbol'))throw Error();}catch{return send(400,{error:'Invalid symbol'});}
+   try{return send(200,await loadFunding(symbol));}catch{return send(503,{error:'資金費率暫不可用'});}
+  }
   if(url.pathname!=='/v1/snapshot')return send(404,{error:'Not found'});
   const symbol=url.searchParams.get('symbol'),tf=url.searchParams.get('tf');
   try{contract(symbol);if(!STEPS[tf]||[...url.searchParams.keys()].some(k=>!['symbol','tf'].includes(k)))throw Error();}catch{return send(400,{error:'Invalid symbol or timeframe'});}
@@ -43,7 +49,8 @@ export function relayHandler({token,load}){
  };
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
- const handler=relayHandler({token:process.env.RELAY_TOKEN,load:createPionexLoader(marketClient())});
+ const client=marketClient();
+ const handler=relayHandler({token:process.env.RELAY_TOKEN,load:createPionexLoader(client),loadFunding:symbol=>fundingBundle(client,symbol)});
  const server=createServer(handler);server.requestTimeout=30000;server.headersTimeout=10000;
  server.listen(Number(process.env.PORT||10000),'0.0.0.0',()=>console.log('Pionex public-market relay listening'));
  const stopScheduler=startScheduler();
