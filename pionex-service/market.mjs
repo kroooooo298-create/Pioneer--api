@@ -1,7 +1,7 @@
 import {analyze} from '../protected-assets/engine.mjs';
 import {candleHealth} from '../protected-assets/journal.mjs';
-export const PIONEX_COINS=['BTC','ETH','BNB','XRP','SOL','ZEC','HYPE','DOGE','LINK','ADA','BCH','LTC','UNI','SUI','TAO','SHIB','ENA','AAVE','ONDO','DOT','XAUT','XAG','SOXLX','SKHX','SMCIX','MUX','SNDKX'];
-export const PIONEX_LABELS={SOXLX:'半導體 3 倍 ETF',SKHX:'SK 海力士',SMCIX:'Super Micro',MUX:'Micron 美光',SNDKX:'SanDisk',XAUT:'Tether Gold 黃金',XAG:'白銀'};
+export const PIONEX_COINS=['BTC','ETH','BNB','XRP','SOL','ZEC','HYPE','DOGE','LINK','ADA','BCH','LTC','UNI','SUI','TAO','SHIB','ENA','AAVE','ONDO','DOT','XAUT','XAG','SOXLX','SKHX','SMCIX','MUX','SNDKX','TSLAX','GOOGLX','MSTRX','NVDAX','INTCX'];
+export const PIONEX_LABELS={SOXLX:'半導體 3 倍 ETF',SKHX:'SK 海力士',SMCIX:'Super Micro',MUX:'Micron 美光',SNDKX:'SanDisk',XAUT:'Tether Gold 黃金',XAG:'白銀',TSLAX:'Tesla 特斯拉',GOOGLX:'Alphabet',MSTRX:'Strategy',NVDAX:'NVIDIA 輝達',INTCX:'Intel 英特爾'};
 export const PIONEX_SOURCE='Pionex USDT 永續合約';
 export const STEPS={'1h':3600000,'4h':14400000};
 export function contract(symbol){const coin=String(symbol).replace(/USDT$/,'');if(!PIONEX_COINS.includes(coin)||symbol!==coin+'USDT')throw Error('不支援的永續合約');return coin+'_USDT_PERP';}
