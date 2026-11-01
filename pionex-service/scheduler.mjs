@@ -8,7 +8,7 @@ export async function invoke({url,token,siteAccess,fetcher=fetch,log=()=>{}},pat
   if(!r.ok)throw Error('http-'+r.status+'; no batch retry');
   stage='response-body';try{return await r.json()}catch{throw Error('invalid-response; no batch retry')}
  }catch(e){code=e.message;throw e;}
- finally{try{log(JSON.stringify({event:'site-request',id,path,method:args?'POST':'GET',cursor:Number.isInteger(args?.cursor)?args.cursor:undefined,kind:['delivery','positions','subscriptions'].includes(args?.kind)?args.kind:undefined,stage,status:r?.status,code,ray:r?.headers?.get('cf-ray')?.replace(/[^a-zA-Z0-9-]/g,'').slice(0,80),elapsedMs:Date.now()-started}));}catch{}}
+ finally{try{log(JSON.stringify({event:'site-request',id,path,method:args?'POST':'GET',cursor:Number.isInteger(args?.cursor)?args.cursor:undefined,kind:['delivery','positions','subscriptions','rapid-delivery','market-entry'].includes(args?.kind)?args.kind:undefined,stage,status:r?.status,code,ray:r?.headers?.get('cf-ray')?.replace(/[^a-zA-Z0-9-]/g,'').slice(0,80),elapsedMs:Date.now()-started}));}catch{}}
 }
 export async function sweep(options){
  const call=args=>invoke(options,'/internal-monitor',args),s=await call();if(!s.ready)return {state:'paused-or-setup-required'};
@@ -29,10 +29,16 @@ export async function sweep(options){
  throw Error('batch-limit');
 }
 export function scanDelay(result){return result?.complete&&['checked','dry-run'].includes(result.state)&&result.failed===0?15000:60000;}
-export function startScheduler(env=process.env,log=console.log){
+export async function rapidSweep(options,getQuotes){
+ const s=await invoke(options,'/internal-rapid');if(!s.ready)return {state:'paused'};
+ if(!Array.isArray(s.symbols)||s.symbols.length>100||typeof s.revision!=='string')throw Error('invalid-rapid-configuration');
+ const batch=await getQuotes();return invoke(options,'/internal-rapid',{source:'Pionex',market:'PERP',revision:s.revision,...batch});
+}
+export function startScheduler(env=process.env,log=console.log,getQuotes){
  if(env.MONITOR_ENABLED!=='true')return ()=>{};
  const options={url:env.MONITOR_SITE_URL,token:env.MONITOR_TOKEN,siteAccess:env.MONITOR_SITE_ACCESS,log};let stopped=false;const timers=new Set();
  function loop(kind,delay,work){const schedule=ms=>{const t=setTimeout(async()=>{timers.delete(t);const start=Date.now();let next=typeof delay==='function'?delay(null):delay;try{const r=await work();if(typeof delay==='function')next=delay(r);if(kind==='scan'||!['idle','checked','sent','cancelled'].includes(r.state))log(JSON.stringify({job:kind,...r,elapsedMs:Date.now()-start}));}catch(e){log(JSON.stringify({job:kind,state:'interrupted',code:e.message,elapsedMs:Date.now()-start}));}if(!stopped)schedule(next);},ms);timers.add(t);};schedule(15000);}
+ if(getQuotes){loop('rapid',30000,()=>rapidSweep(options,getQuotes));loop('rapid-delivery',5000,()=>invoke(options,'/internal-maintenance',{kind:'rapid-delivery'}));loop('market-entry',15000,()=>invoke(options,'/internal-maintenance',{kind:'market-entry'}));}
  loop('scan',scanDelay,()=>sweep(options));
  loop('subscriptions',15000,()=>invoke(options,'/internal-maintenance',{kind:'subscriptions'}));
  loop('delivery',1500,()=>invoke(options,'/internal-maintenance',{kind:'delivery'}));

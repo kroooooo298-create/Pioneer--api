@@ -3,6 +3,7 @@ import {createHash,timingSafeEqual} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 import {createPionexLoader,contract,STEPS} from './market.mjs';
 import {fundingBundle} from './funding.mjs';
+import {rapidQuotes} from './rapid.mjs';
 import {startScheduler} from './scheduler.mjs';
 
 export function marketClient(fetcher=fetch,clock=Date.now,pause=ms=>new Promise(r=>setTimeout(r,ms))){
@@ -53,6 +54,6 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
  const handler=relayHandler({token:process.env.RELAY_TOKEN,load:createPionexLoader(client),loadFunding:symbol=>fundingBundle(client,symbol)});
  const server=createServer(handler);server.requestTimeout=30000;server.headersTimeout=10000;
  server.listen(Number(process.env.PORT||10000),'0.0.0.0',()=>console.log('Pionex public-market relay listening'));
- const stopScheduler=startScheduler();
+ const stopScheduler=startScheduler(process.env,console.log,symbols=>rapidQuotes(client,symbols));
  process.on('SIGTERM',()=>{stopScheduler();server.close(()=>process.exit(0));});
 }
