@@ -34,11 +34,15 @@ export async function rapidSweep(options,getQuotes){
  if(!Array.isArray(s.symbols)||s.symbols.length>100||typeof s.revision!=='string')throw Error('invalid-rapid-configuration');
  const batch=await getQuotes();return invoke(options,'/internal-rapid',{source:'Pionex',market:'PERP',revision:s.revision,...batch});
 }
+// Rapid ingestion targets a start-to-start cadence, never overlapping or replaying a batch.
+export function rapidDelay(result,elapsedMs){
+ return result?.state==='checked'?Math.max(1000,15000-Math.max(0,elapsedMs)):60000;
+}
 export function startScheduler(env=process.env,log=console.log,getQuotes){
  if(env.MONITOR_ENABLED!=='true')return ()=>{};
  const options={url:env.MONITOR_SITE_URL,token:env.MONITOR_TOKEN,siteAccess:env.MONITOR_SITE_ACCESS,log};let stopped=false;const timers=new Set();
- function loop(kind,delay,work){const schedule=ms=>{const t=setTimeout(async()=>{timers.delete(t);const start=Date.now();let next=typeof delay==='function'?delay(null):delay;try{const r=await work();if(typeof delay==='function')next=delay(r);if(kind==='scan'||!['idle','checked','sent','cancelled'].includes(r.state))log(JSON.stringify({job:kind,...r,elapsedMs:Date.now()-start}));}catch(e){log(JSON.stringify({job:kind,state:'interrupted',code:e.message,elapsedMs:Date.now()-start}));}if(!stopped)schedule(next);},ms);timers.add(t);};schedule(15000);}
- if(getQuotes){loop('rapid',30000,()=>rapidSweep(options,getQuotes));loop('rapid-delivery',5000,()=>invoke(options,'/internal-maintenance',{kind:'rapid-delivery'}));loop('market-entry',15000,()=>invoke(options,'/internal-maintenance',{kind:'market-entry'}));}
+ function loop(kind,delay,work){const schedule=ms=>{const t=setTimeout(async()=>{timers.delete(t);const start=Date.now();let next=typeof delay==='function'?delay(null):delay;try{const r=await work();if(typeof delay==='function')next=delay(r,Date.now()-start);if(kind==='scan'||!['idle','checked','sent','cancelled'].includes(r.state))log(JSON.stringify({job:kind,...r,elapsedMs:Date.now()-start}));}catch(e){log(JSON.stringify({job:kind,state:'interrupted',code:e.message,elapsedMs:Date.now()-start}));}if(!stopped)schedule(next);},ms);timers.add(t);};schedule(15000);}
+ if(getQuotes){loop('rapid',rapidDelay,()=>rapidSweep(options,getQuotes));loop('rapid-delivery',5000,()=>invoke(options,'/internal-maintenance',{kind:'rapid-delivery'}));loop('market-entry',15000,()=>invoke(options,'/internal-maintenance',{kind:'market-entry'}));}
  loop('scan',scanDelay,()=>sweep(options));
  loop('subscriptions',15000,()=>invoke(options,'/internal-maintenance',{kind:'subscriptions'}));
  loop('delivery',1500,()=>invoke(options,'/internal-maintenance',{kind:'delivery'}));

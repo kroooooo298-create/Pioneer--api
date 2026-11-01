@@ -10,11 +10,11 @@ export function marketClient(fetcher=fetch,clock=Date.now,pause=ms=>new Promise(
  const cache=new Map();let chain=Promise.resolve(),next=0,queued=0,blockedUntil=0;
  return async(path,ttl)=>{
   if(!/^\/api\/v1\/(common\/symbols\?type=PERP|market\/(indexes|fundingRates\?symbol=[A-Z0-9]+_USDT_PERP&limit=1|bookTickers\?type=PERP|tickers\?type=PERP|klines\?symbol=[A-Z0-9]+_USDT_PERP&interval=(60M|4H)&limit=500))$/.test(path))throw Error('不允許的行情路徑');
-  const hit=cache.get(path);if(hit&&(hit.pending||clock()<hit.expires))return hit.promise;
+  const hit=cache.get(path);if(hit&&(hit.pending||clock()<Math.min(hit.expires,hit.started+ttl)))return hit.promise;
   if(clock()<blockedUntil)throw Error('Pionex 限流或拒絕，暫停重試');
   if(queued>=32)throw Error('行情請求忙碌，請稍後重試');
   queued++;
-  const entry={pending:true,expires:0,promise:null};
+  const entry={pending:true,expires:0,started:clock(),promise:null};
   const task=chain.catch(()=>{}).then(async()=>{
    if(clock()<blockedUntil)throw Error('Pionex 限流或拒絕，暫停重試');
    if(next>clock())await pause(next-clock());next=clock()+650;
